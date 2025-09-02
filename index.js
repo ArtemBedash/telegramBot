@@ -6,7 +6,7 @@ import cron from "node-cron";
 dotenv.config();
 
 const BOT_USERNAME = "frontend_guy_bot";
-let CHAT_ID =  -1003082478806
+let CHAT_ID =  process.env.DAILY_CHAT_ID;
 ; // сюда потом подставим chatId, после логирования
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
@@ -114,7 +114,7 @@ const questions = [
 
 
 // Планируем задавать раз в день в 10:00
-cron.schedule("33 14 * * *", async () => {
+cron.schedule("0 11 * * *", async () => {
     if (!CHAT_ID) return; // если chatId ещё не определён
 
     try {
