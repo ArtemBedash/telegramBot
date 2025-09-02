@@ -6,8 +6,7 @@ import cron from "node-cron";
 dotenv.config();
 
 const BOT_USERNAME = "frontend_guy_bot";
-let CHAT_ID =  process.env.DAILY_CHAT_ID;
-; // сюда потом подставим chatId, после логирования
+let CHAT_ID = process.env.DAILY_CHAT_ID;
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -35,7 +34,7 @@ bot.on("text", async (ctx) => {
     try {
         const chatId = ctx.chat.id;
 
-        // Логируем chatId один раз
+        // Логируем chatId для ежедневного вопроса
         if (!CHAT_ID) {
             CHAT_ID = chatId;
             console.log("chatId для ежедневного вопроса:", CHAT_ID);
@@ -52,7 +51,7 @@ bot.on("text", async (ctx) => {
             userChats[chatId] = [
                 {
                     role: "system",
-                    content: "Ты эксперт по программированию на JavaScript, TypeScript и React. Отвечай коротко и лаконично и с короткими примерами кода, понятными для собеседования. И заканчивай мысль , не обрезая ответ, чтобы все уместилось"
+                    content: "Ты эксперт по JS, TS и React. Отвечай коротко и лаконично, максимум 5 предложений с короткими примерами кода, понятными для собеседования. Не обрезай свой ответ, пиши полностью"
                 }
             ];
         }
@@ -64,16 +63,31 @@ bot.on("text", async (ctx) => {
         const response = await openai.chat.completions.create({
             model: "gpt-4o-mini",
             messages: userChats[chatId],
-            max_tokens: 100
+            max_tokens: 450
         });
 
         const reply = response.choices[0].message.content;
-
-        // Добавляем ответ в историю
         userChats[chatId].push({ role: "assistant", content: reply });
 
-        // Отправка пользователю
-        await ctx.reply(formatMessage(reply), { parse_mode: "HTML" });
+        // Логируем историю переписки
+        console.log("История переписки с чатом", chatId, userChats[chatId]);
+
+        // Отправка сообщения
+        const sentMessage = await ctx.reply(formatMessage(reply), { parse_mode: "HTML" });
+
+        // Удаление через сутки (24 часа)
+        setTimeout(async () => {
+            try {
+                await ctx.deleteMessage(sentMessage.message_id);
+                await ctx.deleteMessage(ctx.message.message_id);
+
+                // Удаляем переписку из памяти
+                delete userChats[chatId];
+                console.log("История переписки с чатом", chatId, "удалена через 24 часа");
+            } catch (err) {
+                console.error("Ошибка при удалении сообщений:", err);
+            }
+        }, 8640000); // 24 часа
 
     } catch (err) {
         console.error(err);
@@ -112,14 +126,23 @@ const questions = [
     "Как работает сборщик мусора в JavaScript?"
 ];
 
-
-// Планируем задавать раз в день в 10:00
+// Планируем задавать раз в день в 11:00
 cron.schedule("0 11 * * *", async () => {
     if (!CHAT_ID) return; // если chatId ещё не определён
 
     try {
         const question = questions[Math.floor(Math.random() * questions.length)];
-        await bot.telegram.sendMessage(CHAT_ID, question);
+        const sentDailyMessage = await bot.telegram.sendMessage(CHAT_ID, question);
+
+        // Удаление ежедневного вопроса через сутки
+        setTimeout(async () => {
+            try {
+                await bot.telegram.deleteMessage(CHAT_ID, sentDailyMessage.message_id);
+            } catch (err) {
+                console.error("Ошибка при удалении ежедневного вопроса:", err);
+            }
+        }, 8640000);
+
         console.log("Вопрос дня отправлен:", question);
     } catch (err) {
         console.error("Ошибка при отправке ежедневного вопроса:", err);
