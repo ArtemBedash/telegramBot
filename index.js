@@ -2,6 +2,7 @@ import { Telegraf } from "telegraf";
 import OpenAI from "openai";
 import dotenv from "dotenv";
 import cron from "node-cron";
+import express from "express"; // 🔹 добавили express
 
 dotenv.config();
 
@@ -15,7 +16,8 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const userChats = {};
 
 // Экранирование HTML
-const escapeHTML = (text) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const escapeHTML = (text) =>
+    text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 // Форматирование кода из ```
 const formatMessage = (text) => {
@@ -34,7 +36,6 @@ bot.on("text", async (ctx) => {
     try {
         const chatId = ctx.chat.id;
 
-        // Логируем chatId для ежедневного вопроса
         if (!CHAT_ID) {
             CHAT_ID = chatId;
             console.log("chatId для ежедневного вопроса:", CHAT_ID);
@@ -43,52 +44,43 @@ bot.on("text", async (ctx) => {
         const text = ctx.message.text;
         const chatType = ctx.chat.type;
 
-        // В группе отвечаем только если упомянули бота
         if (chatType.includes("group") && !text.includes(`@${BOT_USERNAME}`)) return;
 
-        // Инициализация истории пользователя
         if (!userChats[chatId]) {
             userChats[chatId] = [
                 {
                     role: "system",
-                    content: "Ты эксперт по JS, TS и React. Отвечай коротко и лаконично, максимум 5-7 предложений , понятными для собеседования. Не обрезай свой ответ, пиши полностью"
-                }
+                    content:
+                        "Ты эксперт по JS, TS и React. Отвечай коротко и лаконично, максимум 5-7 предложений , понятными для собеседования. Не обрезай свой ответ, пиши полностью",
+                },
             ];
         }
 
-        // Добавляем сообщение пользователя
         userChats[chatId].push({ role: "user", content: text });
 
-        // Отправляем все сообщения GPT
         const response = await openai.chat.completions.create({
             model: "gpt-4o-mini",
             messages: userChats[chatId],
-            max_tokens: 450
+            max_tokens: 450,
         });
 
         const reply = response.choices[0].message.content;
         userChats[chatId].push({ role: "assistant", content: reply });
 
-        // Логируем историю переписки
         console.log("История переписки с чатом", chatId, userChats[chatId]);
 
-        // Отправка сообщения
         const sentMessage = await ctx.reply(formatMessage(reply), { parse_mode: "HTML" });
 
-        // Удаление через сутки (24 часа)
         setTimeout(async () => {
             try {
                 await ctx.deleteMessage(sentMessage.message_id);
                 await ctx.deleteMessage(ctx.message.message_id);
-
-                // Удаляем переписку из памяти
                 delete userChats[chatId];
                 console.log("История переписки с чатом", chatId, "удалена через 24 часа");
             } catch (err) {
                 console.error("Ошибка при удалении сообщений:", err);
             }
-        }, 8640000); // 24 часа
-
+        }, 8640000);
     } catch (err) {
         console.error(err);
         await ctx.reply("Ошибка 🤖. Попробуй ещё раз.");
@@ -123,18 +115,16 @@ const questions = [
     "Что такое полифиллы и когда их используют?",
     "Что такое итераторы и как сделать объект итерируемым?",
     "Как написать полифил для forEach?",
-    "Как работает сборщик мусора в JavaScript?"
+    "Как работает сборщик мусора в JavaScript?",
 ];
 
-// Планируем задавать раз в день в 11:00
 cron.schedule("0 11 * * *", async () => {
-    if (!CHAT_ID) return; // если chatId ещё не определён
+    if (!CHAT_ID) return;
 
     try {
         const question = questions[Math.floor(Math.random() * questions.length)];
         const sentDailyMessage = await bot.telegram.sendMessage(CHAT_ID, question);
 
-        // Удаление ежедневного вопроса через сутки
         setTimeout(async () => {
             try {
                 await bot.telegram.deleteMessage(CHAT_ID, sentDailyMessage.message_id);
@@ -147,4 +137,12 @@ cron.schedule("0 11 * * *", async () => {
     } catch (err) {
         console.error("Ошибка при отправке ежедневного вопроса:", err);
     }
+});
+
+// --- Мини-сервер для Render ---
+const app = express();
+app.get("/", (req, res) => res.send("🤖 Bot is running"));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`🌐 Server running on port ${PORT}`);
 });
