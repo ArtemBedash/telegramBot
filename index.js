@@ -2,24 +2,26 @@ import { Telegraf } from "telegraf";
 import OpenAI from "openai";
 import dotenv from "dotenv";
 import cron from "node-cron";
-import express from "express"; // 🔹 добавили express
+import express from "express";
+import fs from "fs";
 
 dotenv.config();
 
 const BOT_USERNAME = "frontend_guy_bot";
 let CHAT_ID = process.env.DAILY_CHAT_ID;
+const QUESTIONS_FILE = "./lastQuestionTime.json";
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// История сообщений для каждого пользователя
+// --- История сообщений ---
 const userChats = {};
 
-// Экранирование HTML
+// --- Экранирование HTML ---
 const escapeHTML = (text) =>
     text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-// Форматирование кода из ```
+// --- Форматирование кода из ```
 const formatMessage = (text) => {
     const parts = text.split(/```/g);
     let result = "";
@@ -31,7 +33,7 @@ const formatMessage = (text) => {
     return result;
 };
 
-// Обработка сообщений пользователей
+// --- Обработка сообщений пользователей ---
 bot.on("text", async (ctx) => {
     try {
         const chatId = ctx.chat.id;
@@ -87,11 +89,11 @@ bot.on("text", async (ctx) => {
     }
 });
 
-// Запуск бота
+// --- Запуск бота ---
 bot.launch();
 console.log("🤖 Бот запущен!");
 
-// --- Ежедневный вопрос ---
+// --- Вопросы ---
 const questions = [
     "Какие существуют типы данных в JavaScript и как их объявлять?",
     "Что такое лексическая область видимости в JavaScript?",
@@ -118,31 +120,44 @@ const questions = [
     "Как работает сборщик мусора в JavaScript?",
 ];
 
-cron.schedule("0 11 * * *", async () => {
+// --- Время последнего вопроса ---
+let lastQuestionTime = 0;
+if (fs.existsSync(QUESTIONS_FILE)) {
+    lastQuestionTime = JSON.parse(fs.readFileSync(QUESTIONS_FILE)).lastTime;
+}
+
+const ONE_DAY = 24 * 60 * 60 * 1000;
+
+async function sendDailyQuestion() {
     if (!CHAT_ID) return;
+    const question = questions[Math.floor(Math.random() * questions.length)];
+    const sentDailyMessage = await bot.telegram.sendMessage(CHAT_ID, question);
 
-    try {
-        const question = questions[Math.floor(Math.random() * questions.length)];
-        const sentDailyMessage = await bot.telegram.sendMessage(CHAT_ID, question);
+    // Сохраняем время
+    lastQuestionTime = Date.now();
+    fs.writeFileSync(QUESTIONS_FILE, JSON.stringify({ lastTime: lastQuestionTime }));
 
-        setTimeout(async () => {
-            try {
-                await bot.telegram.deleteMessage(CHAT_ID, sentDailyMessage.message_id);
-            } catch (err) {
-                console.error("Ошибка при удалении ежедневного вопроса:", err);
-            }
-        }, 8640000);
+    setTimeout(async () => {
+        try {
+            await bot.telegram.deleteMessage(CHAT_ID, sentDailyMessage.message_id);
+        } catch (err) {
+            console.error("Ошибка при удалении ежедневного вопроса:", err);
+        }
+    }, ONE_DAY);
 
-        console.log("Вопрос дня отправлен:", question);
-    } catch (err) {
-        console.error("Ошибка при отправке ежедневного вопроса:", err);
-    }
-});
+    console.log("Вопрос дня отправлен:", question);
+}
+
+// --- Проверяем пропущенный день при старте ---
+if (Date.now() - lastQuestionTime >= ONE_DAY) {
+    sendDailyQuestion();
+}
+
+// --- Cron на 11:00 ---
+cron.schedule("25 11 * * *", sendDailyQuestion);
 
 // --- Мини-сервер для Render ---
 const app = express();
 app.get("/", (req, res) => res.send("🤖 Bot is running"));
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`🌐 Server running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`🌐 Server running on port ${PORT}`));
