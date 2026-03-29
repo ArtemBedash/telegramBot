@@ -14,14 +14,6 @@ Deno.serve(async (req) => {
       return json({ error: "Method not allowed" }, 405);
     }
 
-    const cronSecret = Deno.env.get("CRON_SECRET");
-    if (cronSecret) {
-      const incomingSecret = req.headers.get("x-cron-secret");
-      if (incomingSecret !== cronSecret) {
-        return json({ error: "Unauthorized" }, 401);
-      }
-    }
-
     const nowIso = new Date().toISOString();
 
     const { data: rows, error } = await db

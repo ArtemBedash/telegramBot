@@ -18,6 +18,21 @@ function getDateInTimezone(timezone: string): string {
   }).format(new Date());
 }
 
+function getHourMinuteInTimezone(timezone: string): { hour: number; minute: number } {
+  const formatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone: timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(new Date());
+  const hour = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
+  const minute = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
+
+  return { hour, minute };
+}
+
 async function ensureDailyChatFromEnv(): Promise<void> {
   const raw = Deno.env.get("DAILY_CHAT_ID");
   if (!raw) {
@@ -91,13 +106,8 @@ Deno.serve(async (req) => {
       return json({ error: "Method not allowed" }, 405);
     }
 
-    const cronSecret = Deno.env.get("CRON_SECRET");
-    if (cronSecret) {
-      const incomingSecret = req.headers.get("x-cron-secret");
-      if (incomingSecret !== cronSecret) {
-        return json({ error: "Unauthorized" }, 401);
-      }
-    }
+    const targetHour = Number(Deno.env.get("DAILY_TARGET_HOUR") ?? "11");
+    const targetMinute = Number(Deno.env.get("DAILY_TARGET_MINUTE") ?? "25");
 
     await ensureDailyChatFromEnv();
     await cleanupOldLocks();
@@ -116,6 +126,12 @@ Deno.serve(async (req) => {
     for (const chat of chats) {
       const chatId = Number(chat.chat_id);
       const timezone = chat.timezone || APP_TIMEZONE;
+      const localTime = getHourMinuteInTimezone(timezone);
+
+      if (localTime.hour !== targetHour || localTime.minute !== targetMinute) {
+        continue;
+      }
+
       const sendDate = getDateInTimezone(timezone);
 
       const lockAcquired = await acquireSendLock(chatId, sendDate);
