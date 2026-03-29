@@ -1,13 +1,9 @@
-import { APP_TIMEZONE, DAILY_MESSAGE_DELETE_TTL_MS, QUESTIONS } from "../_shared/constants.ts";
+import { APP_TIMEZONE, DAILY_MESSAGE_DELETE_TTL_MS } from "../_shared/constants.ts";
+import { enqueueMessageCleanup } from "../_shared/cleanup-queue.ts";
+import { ensurePost, json } from "../_shared/http.ts";
+import { getRandomQuestion } from "../_shared/questions.ts";
 import { db } from "../_shared/supabase.ts";
 import { sendTelegramMessage } from "../_shared/telegram.ts";
-
-function json(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
 
 function getDateInTimezone(timezone: string): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -58,10 +54,7 @@ async function cleanupOldLocks(): Promise<void> {
     .toISOString()
     .slice(0, 10);
 
-  const { error } = await db
-    .from("daily_question_send_lock")
-    .delete()
-    .lt("send_date", cutoff);
+  const { error } = await db.from("daily_question_send_lock").delete().lt("send_date", cutoff);
 
   if (error) {
     throw new Error(`cleanupOldLocks failed: ${error.message}`);
@@ -84,26 +77,11 @@ async function acquireSendLock(chatId: number, sendDate: string): Promise<boolea
   throw new Error(`acquireSendLock failed: ${error.message}`);
 }
 
-async function scheduleCleanup(chatId: number, messageId: number): Promise<void> {
-  const dueAt = new Date(Date.now() + DAILY_MESSAGE_DELETE_TTL_MS).toISOString();
-  const { error } = await db.from("telegram_message_cleanup").upsert(
-    {
-      chat_id: chatId,
-      message_id: messageId,
-      due_at: dueAt,
-    },
-    { onConflict: "chat_id,message_id" },
-  );
-
-  if (error) {
-    throw new Error(`scheduleCleanup failed: ${error.message}`);
-  }
-}
-
 Deno.serve(async (req) => {
   try {
-    if (req.method !== "POST") {
-      return json({ error: "Method not allowed" }, 405);
+    const methodError = ensurePost(req);
+    if (methodError) {
+      return methodError;
     }
 
     const targetHour = Number(Deno.env.get("DAILY_TARGET_HOUR") ?? "11");
@@ -133,13 +111,13 @@ Deno.serve(async (req) => {
       }
 
       const sendDate = getDateInTimezone(timezone);
-
       const lockAcquired = await acquireSendLock(chatId, sendDate);
+
       if (!lockAcquired) {
         continue;
       }
 
-      const question = QUESTIONS[Math.floor(Math.random() * QUESTIONS.length)];
+      const question = await getRandomQuestion();
       const messageId = await sendTelegramMessage(chatId, question);
 
       const { error: logError } = await db.from("daily_question_log").insert({
@@ -152,7 +130,7 @@ Deno.serve(async (req) => {
         throw new Error(`insert daily_question_log failed: ${logError.message}`);
       }
 
-      await scheduleCleanup(chatId, messageId);
+      await enqueueMessageCleanup(chatId, messageId, DAILY_MESSAGE_DELETE_TTL_MS);
       sentCount += 1;
     }
 

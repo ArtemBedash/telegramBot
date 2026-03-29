@@ -1,26 +1,19 @@
+import { ensurePost, json } from "../_shared/http.ts";
 import { db } from "../_shared/supabase.ts";
 import { deleteTelegramMessage } from "../_shared/telegram.ts";
 
-function json(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
 Deno.serve(async (req) => {
   try {
-    if (req.method !== "POST") {
-      return json({ error: "Method not allowed" }, 405);
+    const methodError = ensurePost(req);
+    if (methodError) {
+      return methodError;
     }
-
-    const nowIso = new Date().toISOString();
 
     const { data: rows, error } = await db
       .from("telegram_message_cleanup")
       .select("id, chat_id, message_id, attempts")
       .is("deleted_at", null)
-      .lte("due_at", nowIso)
+      .lte("due_at", new Date().toISOString())
       .order("due_at", { ascending: true })
       .limit(200);
 

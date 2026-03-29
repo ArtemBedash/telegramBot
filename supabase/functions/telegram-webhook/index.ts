@@ -1,5 +1,7 @@
 import { BOT_USERNAME, CONTEXT_TTL_MS, SYSTEM_PROMPT } from "../_shared/constants.ts";
+import { enqueueMessageCleanup } from "../_shared/cleanup-queue.ts";
 import { formatMessage } from "../_shared/format.ts";
+import { ensurePost, json } from "../_shared/http.ts";
 import { createChatCompletion, type ChatMessage } from "../_shared/openai.ts";
 import { db } from "../_shared/supabase.ts";
 import { sendTelegramMessage } from "../_shared/telegram.ts";
@@ -20,26 +22,18 @@ type ContextRow = {
   content: string;
 };
 
-function json(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
+// @ts-ignore
+const requireMentionInGroup = (Deno.env.get("REQUIRE_MENTION_IN_GROUP") ?? "false") === "true";
 
 function getTtlCutoffIso(): string {
   return new Date(Date.now() - CONTEXT_TTL_MS).toISOString();
 }
 
-const requireMentionInGroup = (Deno.env.get("REQUIRE_MENTION_IN_GROUP") ?? "false") === "true";
-
 function canProcessGroupMessage(text: string, chatType: string): boolean {
-  if (!chatType.includes("group")) {
+  if (!chatType.includes("group") || !requireMentionInGroup) {
     return true;
   }
-  if (!requireMentionInGroup) {
-    return true;
-  }
+
   return text.includes(`@${BOT_USERNAME}`);
 }
 
@@ -92,35 +86,16 @@ async function saveContext(chatId: number, userContent: string, assistantContent
   }
 }
 
-async function scheduleCleanup(chatId: number, messageId: number, ttlMs: number): Promise<void> {
-  const dueAt = new Date(Date.now() + ttlMs).toISOString();
-
-  const { error } = await db.from("telegram_message_cleanup").upsert(
-    {
-      chat_id: chatId,
-      message_id: messageId,
-      due_at: dueAt,
-    },
-    { onConflict: "chat_id,message_id" },
-  );
-
-  if (error) {
-    throw new Error(`scheduleCleanup failed: ${error.message}`);
-  }
-}
-
 Deno.serve(async (req) => {
   try {
-    if (req.method !== "POST") {
-      return json({ error: "Method not allowed" }, 405);
+    const methodError = ensurePost(req);
+    if (methodError) {
+      return methodError;
     }
 
     const webhookSecret = Deno.env.get("TELEGRAM_WEBHOOK_SECRET");
-    if (webhookSecret) {
-      const incomingSecret = req.headers.get("x-telegram-bot-api-secret-token");
-      if (incomingSecret !== webhookSecret) {
-        return json({ error: "Unauthorized" }, 401);
-      }
+    if (webhookSecret && req.headers.get("x-telegram-bot-api-secret-token") !== webhookSecret) {
+      return json({ error: "Unauthorized" }, 401);
     }
 
     const update = (await req.json()) as TelegramUpdate;
@@ -151,8 +126,8 @@ Deno.serve(async (req) => {
     const replyMessageId = await sendTelegramMessage(chatId, formatMessage(reply));
 
     await saveContext(chatId, inputText, reply);
-    await scheduleCleanup(chatId, Number(message.message_id), CONTEXT_TTL_MS);
-    await scheduleCleanup(chatId, replyMessageId, CONTEXT_TTL_MS);
+    await enqueueMessageCleanup(chatId, Number(message.message_id), CONTEXT_TTL_MS);
+    await enqueueMessageCleanup(chatId, replyMessageId, CONTEXT_TTL_MS);
 
     return json({ ok: true });
   } catch (error) {
