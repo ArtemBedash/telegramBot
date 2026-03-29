@@ -6,14 +6,14 @@ export function formatMessage(text: string): string {
   const parts = text.split(/```/g);
   let result = "";
 
-  parts.forEach((part, i) => {
-    const escaped = escapeHtml(part);
+  for (let i = 0; i < parts.length; i += 1) {
+    const escaped = escapeHtml(parts[i]);
     if (i % 2 === 1) {
       result += `<pre>${escaped}</pre>`;
-      return;
+    } else {
+      result += escaped;
     }
-    result += escaped;
-  });
+  }
 
   return result;
 }

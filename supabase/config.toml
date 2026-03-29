@@ -1,0 +1,10 @@
+project_id = "telegrambot"
+
+[functions.telegram-webhook]
+verify_jwt = false
+
+[functions.daily-question]
+verify_jwt = false
+
+[functions.cleanup-messages]
+verify_jwt = false
