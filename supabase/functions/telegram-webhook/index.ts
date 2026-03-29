@@ -31,8 +31,13 @@ function getTtlCutoffIso(): string {
   return new Date(Date.now() - CONTEXT_TTL_MS).toISOString();
 }
 
-function hasGroupMention(text: string, chatType: string): boolean {
+const requireMentionInGroup = (Deno.env.get("REQUIRE_MENTION_IN_GROUP") ?? "false") === "true";
+
+function canProcessGroupMessage(text: string, chatType: string): boolean {
   if (!chatType.includes("group")) {
+    return true;
+  }
+  if (!requireMentionInGroup) {
     return true;
   }
   return text.includes(`@${BOT_USERNAME}`);
@@ -128,7 +133,7 @@ Deno.serve(async (req) => {
     const chatId = Number(message.chat.id);
     const inputText = message.text;
 
-    if (!hasGroupMention(inputText, message.chat.type)) {
+    if (!canProcessGroupMessage(inputText, message.chat.type)) {
       return json({ ok: true, skipped: "group-message-without-mention" });
     }
 
