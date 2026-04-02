@@ -135,3 +135,39 @@ export async function editTelegramMessageText(
     throwTelegramError("editMessageText", data);
   }
 }
+
+export async function banTelegramUser(
+  chatId: number,
+  userId: number,
+  options: {
+    revokeMessages?: boolean;
+    untilDateUnix?: number;
+  } = {},
+): Promise<void> {
+  const data = await callTelegramApi<boolean>("banChatMember", {
+    chat_id: chatId,
+    user_id: userId,
+    revoke_messages: options.revokeMessages ?? true,
+    until_date: options.untilDateUnix,
+  });
+
+  if (!data.ok) {
+    throwTelegramError("banChatMember", data);
+  }
+}
+
+export async function pinTelegramMessage(
+  chatId: number,
+  messageId: number,
+  disableNotification = true,
+): Promise<void> {
+  const data = await callTelegramApi<boolean>("pinChatMessage", {
+    chat_id: chatId,
+    message_id: messageId,
+    disable_notification: disableNotification,
+  });
+
+  if (!data.ok) {
+    throwTelegramError("pinChatMessage", data);
+  }
+}

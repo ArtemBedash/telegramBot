@@ -37,6 +37,11 @@ supabase functions deploy cleanup-messages --no-verify-jwt
 3. После подтверждения бот ставит в очередь удаление `message_id` от текущего до `1`.
 4. Функция `cleanup-messages` удаляет сообщения батчами (`BATCH_SIZE=200`) и логирует прогресс.
 
+Режимы:
+- `/cleanup all` (или просто `/cleanup`) — массовая очистка по `message_id`.
+- `/cleanup profanity` — включить авто-бан за мат (временный бан) + отправка предупреждения-песенки.
+- `/cleanup profanity off` — выключить авто-удаление матов.
+
 Требования:
 - бот должен быть админом группы с правом `Delete messages`.
 - команда работает только в `group/supergroup`.
@@ -52,6 +57,9 @@ Rate limit/flood control:
 - `OPENAI_WEB_SEARCH_ENABLED=true` — включить веб-поиск.
 - `OPENAI_WEB_SEARCH_MODEL` — модель для веб-поиска (по умолчанию берется `OPENAI_MODEL`).
 - `CLEANUP_CONFIRM_TTL_MS` — время жизни подтверждения `/cleanup` (по умолчанию 120000 мс).
+- `PROFANITY_WARNING_DELETE_TTL_MS` — через сколько удалять служебное предупреждение о мате (по умолчанию 30000 мс).
+- `PROFANITY_BAN_SECONDS` — длительность временного бана за мат (минимум 30 секунд из-за ограничений Telegram).
+- `PROFANITY_SONG_TEXT` — текст песенки о правилах группы при нарушении.
 
 ## Webhook
 ```bash

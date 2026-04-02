@@ -56,6 +56,7 @@ async function loadDueRows(): Promise<CleanupRow[]> {
     .is("deleted_at", null)
     .lte("due_at", new Date().toISOString())
     .order("due_at", { ascending: true })
+    .order("message_id", { ascending: false })
     .limit(BATCH_SIZE);
 
   if (error) {
