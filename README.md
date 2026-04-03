@@ -47,7 +47,7 @@ supabase functions deploy cleanup-messages --no-verify-jwt
 - команда работает только в `group/supergroup`.
 
 Ограничение Telegram Bot API:
-- часть старых сообщений Telegram не даст удалить (в т.ч. из-за лимитов API по давности), такие сообщения помечаются как `not_found/failed` и не блокируют очередь.
+- часть старых сообщений Telegram не даст удалить (в т.ч. из-за лимитов API по давности), такие сообщения помечаются как `not_found/failed` и не блокируют очередь..
 
 Rate limit/flood control:
 - при `429` учитывается `retry_after`, сообщение переходит на повтор с соответствующей задержкой.
